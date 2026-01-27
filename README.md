@@ -1,0 +1,2 @@
+# GitFun
+Funny projects 
