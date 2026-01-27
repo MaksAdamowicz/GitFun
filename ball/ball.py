@@ -9,14 +9,15 @@ FPS = 60
 GAME_DURATION = 60  
 SPAWN_DISTANCE = 25  
 MAX_RADIUS = 500     
+BATCH_SIZE = 10      
 
 # Colors
 BLACK = (10, 10, 10)
 WHITE = (255, 255, 255)
 GRAY = (100, 100, 100)
-RED = (255, 50, 50)
 GREEN = (50, 255, 50)
-NEON_BLUE = (50, 200, 255)
+NEON_BLUE = (50, 200, 255) # Ball
+NEON_RED = (255, 60, 60)   # Rings
 
 # --- SLIDER CLASS ---
 class Slider:
@@ -76,17 +77,25 @@ class Ball:
         pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
 
 class Ring:
-    def __init__(self, radius):
+    def __init__(self, radius, index):
         self.radius = radius
         self.angle = random.uniform(0, math.pi * 2)
         self.gap_width = 1.2 
-        self.direction = random.choice([-1, 1])
-        self.color = (random.randint(50, 255), random.randint(50, 255), random.randint(200, 255))
+        
+        self.batch_id = index // BATCH_SIZE
+        
+        if self.batch_id % 2 == 0:
+            self.direction = 1  
+        else:
+            self.direction = -1 
+            
+        self.color = NEON_RED
         self.thickness = 4
 
-    def update(self, rot_speed, shrink_speed):
-        self.angle += self.direction * rot_speed
-        self.radius -= shrink_speed
+    def update(self, batch_speed_multiplier, base_rot_speed, actual_shrink_amount):
+        current_speed = base_rot_speed * batch_speed_multiplier
+        self.angle += self.direction * current_speed
+        self.radius -= actual_shrink_amount
         self.angle = self.angle % (2 * math.pi)
 
     def draw(self, screen):
@@ -100,7 +109,7 @@ class Ring:
 def run_game():
     pygame.init()
     screen = pygame.display.set_mode((WIDTH, HEIGHT))
-    pygame.display.set_caption("Tunnel Escape - Smooth Motion")
+    pygame.display.set_caption("Tunnel Escape - Distorted Bounce")
     clock = pygame.time.Clock()
     
     font = pygame.font.SysFont("Arial", 16)
@@ -109,22 +118,73 @@ def run_game():
 
     # --- Sliders ---
     slider_gravity = Slider(20, 50, 150, 0.0, 0.5, 0.15, "Gravity")
-    slider_rot = Slider(20, 120, 150, 0.0, 0.1, 0.02, "Spin Speed")
-    slider_shrink = Slider(20, 190, 150, 0.0, 2.0, 0.60, "Shrink Speed")
-    slider_bounce = Slider(20, 260, 150, 0.5, 1.5, 1.05, "Bounciness") 
+    slider_rot = Slider(20, 120, 150, 0.0, 0.15, 0.06, "Base Spin") 
+    slider_shrink = Slider(20, 190, 150, 0.0, 3.0, 1.5, "Shrink Speed")
+    slider_bounce = Slider(20, 260, 150, 0.5, 1.5, 1.0, "Bounciness") 
     
     sliders = [slider_gravity, slider_rot, slider_shrink, slider_bounce]
+
+    # --- BATCH MANAGER ---
+    batch_speeds = {}       
+    batch_targets = {}      
+    batch_timers = {}       
+    batch_states = {}       
+
+    def update_batch_logic(b_id):
+        if b_id not in batch_speeds:
+            batch_speeds[b_id] = 0.5
+            batch_targets[b_id] = 0.5
+            batch_timers[b_id] = random.randint(60, 180) 
+            batch_states[b_id] = 'CRUISE'
+
+        batch_timers[b_id] -= 1
+
+        if batch_timers[b_id] <= 0:
+            current_state = batch_states[b_id]
+            
+            if current_state == 'CRUISE':
+                if random.random() < 0.4: 
+                    batch_states[b_id] = 'SURGE'
+                    batch_targets[b_id] = random.uniform(2.5, 4.0) 
+                    batch_timers[b_id] = random.randint(90, 120)   
+                else:
+                    batch_states[b_id] = 'CRUISE'
+                    batch_targets[b_id] = random.uniform(0.2, 0.6) 
+                    batch_timers[b_id] = random.randint(60, 180)
+            
+            elif current_state == 'SURGE':
+                batch_states[b_id] = 'CRUISE'
+                batch_targets[b_id] = random.uniform(0.2, 0.5) 
+                batch_timers[b_id] = random.randint(60, 120)
+
+        current = batch_speeds[b_id]
+        target = batch_targets[b_id]
+        
+        lerp_speed = 0.05 if target > current else 0.03
+
+        diff = target - current
+        current += diff * lerp_speed
+        
+        batch_speeds[b_id] = current
+        return current
 
     def reset_game():
         b = Ball()
         r = []
         current_r = 200
+        total_spawned = 0
+        batch_speeds.clear()
+        batch_targets.clear()
+        batch_timers.clear()
+        batch_states.clear()
+        
         while current_r < MAX_RADIUS:
-            r.append(Ring(current_r))
+            r.append(Ring(current_r, total_spawned))
             current_r += SPAWN_DISTANCE
-        return b, r, pygame.time.get_ticks(), 0
+            total_spawned += 1
+        return b, r, pygame.time.get_ticks(), 0, total_spawned
 
-    ball, rings, start_ticks, score = reset_game()
+    ball, rings, start_ticks, score, total_rings_created = reset_game()
     
     running = True
     game_over = False
@@ -135,7 +195,7 @@ def run_game():
         screen.fill(BLACK)
         
         current_gravity = slider_gravity.val
-        current_rot_speed = slider_rot.val
+        base_rot_speed = slider_rot.val
         current_shrink_speed = slider_shrink.val
         current_bounce = slider_bounce.val 
 
@@ -155,24 +215,38 @@ def run_game():
                 s.handle_event(event)
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_SPACE and game_over:
-                    ball, rings, start_ticks, score = reset_game()
+                    ball, rings, start_ticks, score, total_rings_created = reset_game()
                     game_over = False
 
         if not game_over:
             ball.update(current_gravity)
 
-            for ring in rings:
-                ring.update(current_rot_speed, current_shrink_speed)
+            active_batches = set(r.batch_id for r in rings)
+            current_frame_batch_speeds = {} 
+            for b_id in active_batches:
+                current_frame_batch_speeds[b_id] = update_batch_logic(b_id)
 
-            # Spawn new rings
+            effective_shrink_speed = current_shrink_speed
+            if rings:
+                inner_radius = rings[0].radius
+                if inner_radius < 50:
+                    factor = inner_radius / 50
+                    effective_shrink_speed = current_shrink_speed * factor * 0.8 
+                    if inner_radius < 15:
+                        effective_shrink_speed = 0.05
+            
+            for ring in rings:
+                speed_mult = current_frame_batch_speeds.get(ring.batch_id, 1.0)
+                ring.update(speed_mult, base_rot_speed, effective_shrink_speed)
+
             if rings and rings[-1].radius < MAX_RADIUS - SPAWN_DISTANCE:
-                rings.append(Ring(MAX_RADIUS))
+                rings.append(Ring(MAX_RADIUS, total_rings_created))
+                total_rings_created += 1
 
             if rings:
                 current_ring = rings[0]
                 
-                # --- AUTO POP LOGIC ---
-                if current_ring.radius < ball.radius + 5:
+                if current_ring.radius < 11: 
                     rings.pop(0)
                     score += 1
                 
@@ -190,13 +264,10 @@ def run_game():
                         if angle_diff > math.pi: angle_diff = (2 * math.pi) - angle_diff
 
                         if angle_diff < (current_ring.gap_width / 2):
-                            # --- SUCCESS: Escaped through hole ---
                             rings.pop(0) 
                             score += 1
-                            # CHANGED: No position or velocity boost here.
-                            # The ball simply continues its current path.
                         else:
-                            # --- BOUNCE ---
+                            # --- CALCULATE REFLECTION ---
                             overlap = distance + ball.radius - (current_ring.radius - current_ring.thickness/2)
                             ball.x -= (dist_x / distance) * overlap
                             ball.y -= (dist_y / distance) * overlap
@@ -205,8 +276,21 @@ def run_game():
                             ny = dist_y / distance
                             dot = ball.vx * nx + ball.vy * ny
                             
-                            ball.vx = (ball.vx - 2 * dot * nx) * current_bounce
-                            ball.vy = (ball.vy - 2 * dot * ny) * current_bounce
+                            # 1. Standard Bounce Vector (Result X, Result Y)
+                            rx = (ball.vx - 2 * dot * nx) * current_bounce
+                            ry = (ball.vy - 2 * dot * ny) * current_bounce
+                            
+                            # 2. Add DISTORTION Angle (Random +/- 0.18 radians / approx 10 degrees)
+                            # This prevents the ball from getting stuck in a perfect loop
+                            distortion = random.uniform(-0.18, 0.18)
+                            
+                            # 3. Rotate the bounce vector by the distortion angle
+                            # formula: x' = x cos(a) - y sin(a), y' = x sin(a) + y cos(a)
+                            cos_a = math.cos(distortion)
+                            sin_a = math.sin(distortion)
+                            
+                            ball.vx = rx * cos_a - ry * sin_a
+                            ball.vy = rx * sin_a + ry * cos_a
 
         for ring in reversed(rings):
             ring.draw(screen)
