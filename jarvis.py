@@ -1,4 +1,4 @@
-# AIzaSyCrX1XrWYRw-ST0r3LsewUhih5ExB-yuZg
+
 from google import genai
 import os
 
@@ -8,7 +8,6 @@ import pyttsx3
 from google import genai
 
 # --- INITIALIZATION ---
-API_KEY = "AIzaSyCrX1XrWYRw-ST0r3LsewUhih5ExB-yuZg"
 client = genai.Client(api_key=API_KEY)
 
 # JARVIS Voice Setup
