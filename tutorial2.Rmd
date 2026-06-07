@@ -1,0 +1,293 @@
+---
+title: "Data Science Research Methods Tutorial 2: The Lalonde Experimetal Data"
+author: "Tobias Klein and Minh Nguyen"
+output:
+  html_document: default
+  pdf_document: default
+---
+```{r echo=FALSE}
+.libPaths("C:/Users/u919597/OneDrive - Tilburg University/Stuffs/Rlibpath")
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+For this tutorial, we will examine the method of matching using propensity score by replicating the second example in Imbens (2015). You can find the paper on Canvas. The relevant part is part B of section 6.2. This part examines the effect of a job training program in 1976 on the labour outcome of the participants. 
+
+This question is not easy to study as people who join a training program in real life can be different from those who do not in both observed and unobserved characteristics. One method to overcome this difficulty is to run a field experiment where participants are assigned randomly. The "Lalonde" dataset which we analyze today is collected from a field experiment which randomly assigned participants to the training program.
+
+However, Imbens (2015) find evidence of selective attrition in this dataset: People are likely to drop out of the experiment in a pattern such that the likelihood of dropping out depends on the treatment assignment. Thus, we cannot assume that random assignment of treatment holds in our dataset. However, we can still use the matching estimator instead of the difference-in-means estimator if the rate of attrition remains the same when we control for the observed covariates. 
+
+The potential outcome model in this example is the following: 
+
++ The outcome variable $Y_{i}$ is the income of participant $i$ in 1978
+
+    + The potential outcome variable $Y_{0i}$ measures the income of participant $i$ in 1978 if he/she was not selected to take part in the training program
+    
+    + The potential outcome variable $Y_{1i}$ measures the income of participant $i$ in 1978 if he/she was selected to take part in the training program
+
++ The treatment variable is whether the participant takes part in the training program ($D_{i} = 1$) or did not take part in the training program ($D_{i} = 0$)
+ 
+
+## Load Data
+We need to load the data in the format .dta using the read_dta function, which is a part of the haven package. To run the matching estimator, we need the MatchIt package. Please first install them if they are not installed. The knitr package is also necessary for you to knit this Rmarkdown file. You can get the data set from Canvas. Put the Rmarkdown file and the data file into the same folder. Then, you need to set the working directory to the file’s location and load the data set into the environment.
+
+```{r loaddata}
+library(knitr)
+library(haven)
+library(MatchIt)
+library(dplyr)
+data = read_dta('nsw_dw.dta')
+data$id <- seq_len(nrow(data))
+data <- data %>% relocate(id)
+```
+
+
+## Calculating the ATT by using the difference-in-means estimator
+
+In this section, we first calculate the difference-in-means estimate.
+
+```{r difference in mean}
+meanre78 <- aggregate(re78~treat, data=data, FUN=mean)
+estimate_diffmean <- meanre78[2,2] - meanre78[1,2]
+estimate_diffmean 
+t.test(data$re78[data$treat==1],data$re78[data$treat==0])
+```
+
+According the difference-in-means estimator, the ATT is approximately 1800. [Dehejia and Wahba, (1999)](https://www.jstor.org/stable/2669919) also find the same estimate when using this method.
+
+## Checking for randomization - Table 10 in Imbens (2015)
+
+In this section, we compare the observed characteristics of those who take part in the program (the treatment group) and those who did not take part in the program (the control group) to see if randomization fail. Table 10 reports the summary statistics of the covariates for the treatment and the control group as well as the test statistic and the equivalent p-value of the t-test to compare the mean. Column 1 and 2 show the mean and the standard deviation for the control group while column 3 and 4 report the mean and the standard deviation of the treated group.
+
+
+```{r table10}
+# Generate binary variable for unemployment
+data$u74 = data$re74<0.0001
+data$u75 = data$re75<0.0001
+
+colSd <- function (x, na.rm=FALSE) apply(X=x, MARGIN=2, FUN=sd, na.rm=na.rm)
+columns_of_interest = c("black","hispanic","age","married","nodegree","education","re74","u74","re75","u75")
+
+# Generate the mean
+treatment_means = colMeans(data[data$treat==1,columns_of_interest])
+control_means = colMeans(data[data$treat==0,columns_of_interest])
+
+# Generate the sample std
+treatment_std = colSd(data[data$treat==1,columns_of_interest])
+control_std = colSd(data[data$treat==0,columns_of_interest])
+
+# Generate the t-test
+t_test_results = c(t.test(data$black[data$treat==1],data$black[data$treat==0])$statistic,
+                   t.test(data$hispanic[data$treat==1],data$hispanic[data$treat==0])$statistic,
+                   t.test(data$age[data$treat==1],data$age[data$treat==0])$statistic,
+                   t.test(data$married[data$treat==1],data$married[data$treat==0])$statistic,
+                   t.test(data$nodegree[data$treat==1],data$nodegree[data$treat==0])$statistic,
+                   t.test(data$education[data$treat==1],data$education[data$treat==0])$statistic,
+                   t.test(data$re74[data$treat==1],data$re74[data$treat==0])$statistic,
+                   t.test(data$u74[data$treat==1],data$u74[data$treat==0])$statistic,
+                   t.test(data$re75[data$treat==1],data$re75[data$treat==0])$statistic,
+                   t.test(data$u75[data$treat==1],data$u75[data$treat==0])$statistic)
+
+# Generate the p-value
+t_test_pvalue = c(t.test(data$black[data$treat==1],data$black[data$treat==0])$p.value,
+                  t.test(data$hispanic[data$treat==1],data$hispanic[data$treat==0])$p.value,
+                  t.test(data$age[data$treat==1],data$age[data$treat==0])$p.value,
+                  t.test(data$married[data$treat==1],data$married[data$treat==0])$p.value,
+                  t.test(data$nodegree[data$treat==1],data$nodegree[data$treat==0])$p.value,
+                  t.test(data$education[data$treat==1],data$education[data$treat==0])$p.value,
+                  t.test(data$re74[data$treat==1],data$re74[data$treat==0])$p.value,
+                  t.test(data$u74[data$treat==1],data$u74[data$treat==0])$p.value,
+                  t.test(data$re75[data$treat==1],data$re75[data$treat==0])$p.value,
+                  t.test(data$u75[data$treat==1],data$u75[data$treat==0])$p.value)
+
+# Create data frame with 0 rows and 3 columns
+df <- data.frame(matrix(ncol = 7, nrow = 0))
+
+# Provide column names
+colnames(df) <- c('Covariate','mean_control', '(s.d_control)','mean_treated', '(s.d_treated)','t-stat','p-value' )
+
+# Loop to input the value into the equivalence cell
+for (i in 1:10){
+  df[i,]  = c(columns_of_interest[i],
+              round(control_means[i],digits=2),
+              round(control_std[i],digits=2),
+              round(treatment_means[i],digits=2),
+              round(treatment_std[i],digits=2),
+              round(t_test_results[i],digits=1),
+              round(t_test_pvalue[i],digits=3))
+}
+
+kable(df)
+
+```
+
+The p-values of the t-test provide evidences that the two groups do differ in some characteristics. For example: We can see that the sample mean in the number of people with no degree in the two groups are different. This suggests that people who do not have a degree are more likely to drop out of the treatment group than in the control group. 
+
+This can bias the estimate for the treatment effect upward if those who have a degree are also more likely to have a higher income with or without the training program. Thus, we need to control for the observed covariates through matching.
+
+## Calculating the propensity score - Table 11 in Imbens (2015)
+
+In the case of multiple observed covariates and relatively few observations like in this dataset, we would want to match using the propensity score. In this example, we first calculate the propensity score by estimating a logistic regression with the treatment variable is the dependent variable and the observed covariates as the independent variables. The predicted probabilities generated from the estimation of this logit model $\hat{P}(X_{i})$ will be our propensity score. Below we replicate the propensity score calculated by Imbens (2015) in Table 11 which includes ten covariates.
+
+```{r table11}
+
+# Create interaction terms
+data$re74nodegree = data$re74*data$nodegree
+data$nodegreeeducation = data$nodegree*data$education
+data$u75education = data$education*data$u75
+
+# Run the logistic regression
+propreg = glm(treat ~ re74 +u74 + re75 + u75 + nodegree + hispanic + education + nodegreeeducation + re74nodegree + u75education, family = binomial(link = "logit"),data=data)
+summary(propreg)
+```
+
+The estimated coefficient is quite similar to that of Table 11 in the paper. The only difference is with the coefficients for income in 1974 and in 1975. Here we did not divide income by 1000. Thus, the size of the estimate of the coefficients for re74 and re75 are 1000 times smaller.   
+
+
+## Nearest neighbor propensity score matching
+
+In this section, we calculate the impact of the program on income in 1978. We will use the nearest neighbour matching method using the logit propensity score derived from the estimate shown in Table 11. Imbens (2015) used a different matching procedure which was explained on page 390 that do not use the propensity score in Table 11. 
+
+```{r table15}
+# Generate the matched data
+match_prop <- matchit(treat ~ re74 +u74 + re75 +u75  + nodegree + hispanic + education + nodegreeeducation + re74nodegree + u75education,  method = "nearest",  distance = "glm", link = "logit", data=data )
+
+# Data containing the treated observations and their matched equivalence in the control group
+data_match_prop <- match.data(match_prop)
+
+# Estimate the ATT
+mean_re78_match_prop <- aggregate(re78~treat,   data=data_match_prop,    FUN=mean)
+estimate_matching <- mean_re78_match_prop$re78[2]    -  mean_re78_match_prop$re78[1]
+estimate_matching
+
+# T-test to see if the mean of the two groups is statistically different than each other
+t.test(data_match_prop$re78[data_match_prop$treat==1],data_match_prop$re78[data_match_prop$treat==0])
+
+```
+
+After matching, we find the difference between incomes is approximately 1500 on average. This is lower than the estimate of the difference-in-means estimator.
+
+However, we can see in the data that there are multiple observations with the same propensity score. In a nearest neighbor matching set up, we can only select one out of the many control individuals with the same propensity score with a treated observation. Austin (2014), demonstrates that this can have a modest effect on the point estimation. We will also observe this in Appendix 1 of the python jupyter notebook. 
+
+## Flexible OLS estimator
+
+In this section, we show you how to get the equivalence matching estimate of the ATT by using the regression equation in slide 67. 
+```{r dataprep}
+# Create the interaction of the demeaned covariates with the treatment 
+
+data$re74_treatdemeaned = data$treat*(data$re74 - mean(data$re74))
+
+data$u74_treatdemeaned = data$treat*(data$u74 - mean(data$u74))
+
+data$re75_treatdemeaned = data$treat*(data$re75 - mean(data$re75))
+
+data$u75_treatdemeaned = data$treat*(data$u75 - mean(data$u75))
+
+data$nodegree_treatdemeaned = data$treat*(data$nodegree - mean(data$nodegree))
+
+data$hispanic_treatdemeaned = data$treat*(data$hispanic - mean(data$hispanic))
+
+data$education_treatdemeaned = data$treat*(data$education - mean(data$education))
+
+data$nodegreeeducation_treatdemeaned = data$treat*(data$nodegreeeducation - mean(data$nodegreeeducation))
+
+data$re74nodegree_treatdemeaned = data$treat*(data$re74nodegree - mean(data$re74nodegree))
+
+data$u75education_treatdemeaned = data$treat*(data$u75education - mean(data$u75education))
+```
+
+The regression and the estimated ATT is the following: 
+
+```{r regression}
+
+# run linear regression on slide 67
+reg_matching <- lm(re78 ~ treat +  re74 +u74 + re75 +u75  + nodegree + hispanic + education + nodegreeeducation + re74nodegree + u75education 
+                   +  re74_treatdemeaned +u74_treatdemeaned + re75_treatdemeaned + u75_treatdemeaned  + nodegree_treatdemeaned + hispanic_treatdemeaned + education_treatdemeaned 
+                   +  nodegreeeducation_treatdemeaned + re74nodegree_treatdemeaned + u75education_treatdemeaned, data = data)
+
+summary(reg_matching)
+
+# get the ATT estimate
+estimate_ATT_reg = reg_matching$coefficient[2] + (sum(data$re74_treatdemeaned)*reg_matching$coefficients[13] + sum(data$u74_treatdemeaned)*reg_matching$coefficients[14] + 
+                                 sum(data$re75_treatdemeaned)*reg_matching$coefficients[15] + sum(data$u75_treatdemeaned)*reg_matching$coefficients[16] + 
+                                 sum(data$nodegree_treatdemeaned)*reg_matching$coefficients[17] + sum(data$hispanic_treatdemeaned)*reg_matching$coefficients[18] + 
+                                 sum(data$education_treatdemeaned)*reg_matching$coefficients[19] + sum(data$nodegreeeducation_treatdemeaned)*reg_matching$coefficients[20] + 
+                                 sum(data$re74nodegree_treatdemeaned)*reg_matching$coefficients[21] + sum(data$u75education_treatdemeaned)*reg_matching$coefficients[22])/sum(data$treat)
+estimate_ATT_reg
+```
+
+The estimate for the ATT is approximately 1686. This is somewhat different from that of the nearest neighbor matching estimator which uses the propensity score above. 
+
+## Appendix 1: Entropy balancing
+
+Another way to do matching is to assign weights to the data. Hainmueller (2012) introduce a method in which we create these weights and then run OLS on these weighted data. The procedure to run them in R are as below. 
+
+```{r}
+# Load the ebal package
+library(ebal)
+
+# Prepare the covariates for entropy balancing
+covariates <- data.frame(re74 = data$re74,
+                         u74 = data$u74,
+                         re75 = data$re75,
+                         u75 = data$u75,
+                         nodegree = data$nodegree,
+                         hispanic = data$hispanic,
+                         education = data$education,
+                         nodegreeeducation = data$nodegreeeducation,
+                         re74nodegree = data$re74nodegree,
+                         u75education = data$u75education)
+
+# Perform entropy balancing
+ebalance_weights <- ebalance(Treatment = data$treat, X = covariates)
+
+# Add weights to the dataset
+data$ebal_weights <- ifelse(data$treat == 1, 1, ebalance_weights$w)
+
+# Run the weighted regression
+reg_ebal <- lm(re78 ~ treat + re74 + u74 + re75 + u75 + nodegree + hispanic + education +
+                 nodegreeeducation + re74nodegree + u75education,
+               data = data, weights = ebal_weights)
+
+# Summary of the regression
+summary(reg_ebal)
+
+# Get the ATT estimate
+estimate_ATT_ebal <- coef(reg_ebal)["treat"]
+estimate_ATT_ebal
+```
+
+This estimate, 1464, is somewhat difference to the estimate from the flexible OLS approach (1686).
+
+Finally, for comparison, we run the unweighted regression.
+
+```{r}
+# Run the unweighted regression
+reg_unweighted <- lm(re78 ~ treat + re74 + u74 + re75 + u75 + nodegree + hispanic + education +
+                       nodegreeeducation + re74nodegree + u75education, 
+                     data = data)
+
+# Summary of the regression
+summary(reg_unweighted)
+
+# Get the ATT estimate
+estimate_ATT_unweighted <- coef(reg_unweighted)["treat"]
+estimate_ATT_unweighted
+
+```
+
+This estimate is not far off from our weighted estimate. 
+
+
+## References 
+
+Austin, P. C. (2014). A comparison of 12 algorithms for matching on the propensity score. Statistics in Medicine, 33(6), 1057-1069.https://onlinelibrary.wiley.com/doi/10.1002/sim.6004
+
+Dehejia, R. H., & Wahba, S. (1999). Causal Effects in Nonexperimental Studies: Reevaluating the Evaluation of Training Programs. Journal of the American Statistical Association, 94(448), 1053–1062. https://doi.org/10.2307/2669919
+
+Hainmueller, J. (2012). "Entropy Balancing for Causal Effects: A Multivariate Reweighting Method to Produce Balanced Samples in Observational Studies." Political Analysis, 20(1), 25–46. doi:10.1093/pan/mpr025
+
+Imbens, G. W. (2015). Matching Methods in Practice: Three Examples. The Journal of Human Resources, 50(2), 373–419. http://www.jstor.org/stable/24735990
+
