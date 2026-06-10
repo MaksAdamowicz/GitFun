@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TI-84 .8XP Notes Converter</title>
+    <meta name="description" content="Convert plain text files (.txt) into TI-83/84 Plus program files (.8xp) to easily read notes, formulas, and cheatsheets on your graphing calculator.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-glow"></div>
+    
+    <header class="app-header">
+        <div class="logo-container">
+            <span class="logo-icon">⚡</span>
+            <h1>TI-84 <span class="gradient-text">.8XP Converter</span></h1>
+        </div>
+        <p class="subtitle">Convert laptop notes &amp; text files into calculator-readable files instantly.</p>
+    </header>
+
+    <main class="app-container">
+        <!-- Editor Section -->
+        <section class="panel editor-panel">
+            <div class="panel-header">
+                <h2>📝 Input Notes</h2>
+                <div class="file-actions">
+                    <button type="button" id="clearBtn" class="btn btn-secondary btn-sm">Clear</button>
+                    <label for="fileInput" class="btn btn-primary btn-sm btn-upload">
+                        Upload .txt
+                        <input type="file" id="fileInput" accept=".txt" style="display: none;">
+                    </label>
+                </div>
+            </div>
+            
+            <div class="drop-zone" id="dropZone">
+                <span class="drop-icon">📥</span>
+                <span class="drop-text">Drag &amp; drop a .txt file here or click upload</span>
+            </div>
+
+            <div class="textarea-container">
+                <textarea id="notesInput" placeholder="Type or paste your notes here... (e.g. formulas, study guides, cheatsheets)"></textarea>
+                <div class="editor-stats">
+                    <span id="charCount">0 characters</span>
+                    <span id="lineCount">0 lines</span>
+                </div>
+            </div>
+
+            <!-- Configuration Form -->
+            <div class="config-grid">
+                <div class="config-group">
+                    <label for="progName">Calculator Program Name</label>
+                    <div class="input-wrapper">
+                        <input type="text" id="progName" maxlength="8" value="NOTES" placeholder="NOTES" autocomplete="off">
+                        <span class="input-limit" id="nameLen">5/8</span>
+                    </div>
+                    <span class="help-text">1-8 letters &amp; numbers. Must start with a letter.</span>
+                </div>
+
+                <div class="config-group">
+                    <label for="wrapSelect">Line Wrapping Mode</label>
+                    <select id="wrapSelect">
+                        <option value="0">Don't Wrap Lines</option>
+                        <option value="16">TI-83/84 Screen (16 Chars)</option>
+                        <option value="26" selected>TI-84 CE Screen (26 Chars - Recommended)</option>
+                        <option value="custom">Custom Width</option>
+                    </select>
+                </div>
+
+                <div id="customWrapGroup" class="config-group" style="display: none;">
+                    <label for="customWrapWidth">Custom Wrap Width</label>
+                    <input type="number" id="customWrapWidth" min="5" max="100" value="26">
+                </div>
+            </div>
+
+            <div class="toggle-group">
+                <label class="switch-container">
+                    <input type="checkbox" id="sanitizeToggle" checked>
+                    <span class="switch-slider"></span>
+                </label>
+                <div class="toggle-label">
+                    <span class="toggle-title">Auto-Sanitize Content</span>
+                    <span class="toggle-desc">Replace accents (é &rarr; e), convert smart quotes, and filter unsupported symbols.</span>
+                </div>
+            </div>
+
+            <button type="button" id="convertBtn" class="btn btn-convert">
+                <span>Generate .8XP File</span>
+                <div class="btn-glow"></div>
+            </button>
+        </section>
+
+        <!-- Calculator Preview Section -->
+        <section class="panel preview-panel">
+            <div class="panel-header">
+                <h2>📱 Calculator Screen Preview</h2>
+                <div class="font-toggle">
+                    <button type="button" id="btnFontCE" class="btn-toggle active" data-width="26">CE (26 cols)</button>
+                    <button type="button" id="btnFontClassic" class="btn-toggle" data-width="16">Classic (16 cols)</button>
+                </div>
+            </div>
+
+            <!-- CSS Calculator Body -->
+            <div class="calc-body">
+                <div class="calc-brand">TEXAS INSTRUMENTS</div>
+                <div class="calc-model">TI-84 Plus CE</div>
+                
+                <!-- Calculator Screen -->
+                <div class="calc-screen-container">
+                    <div class="calc-screen-header">
+                        <span>NORMAL FLOAT AUTO REAL RADIAN MP</span>
+                        <span class="battery">⚡ 100%</span>
+                    </div>
+                    
+                    <div class="calc-screen" id="calcScreen">
+                        <div class="calc-program-header">PROGRAM:NOTES</div>
+                        <div class="calc-program-content" id="calcContent"></div>
+                        <div class="calc-cursor"></div>
+                    </div>
+                </div>
+
+                <!-- Calculator Keys (Decorative mockup for premium feel) -->
+                <div class="calc-keypad-mockup">
+                    <div class="key-row nav-row">
+                        <div class="key key-oval key-blue"><span>2nd</span></div>
+                        <div class="key key-oval key-gray"><span>mode</span></div>
+                        <div class="key key-oval key-gray"><span>del</span></div>
+                        <div class="key-pad-dir">
+                            <div class="key key-oval key-dark"><span>&larr;</span></div>
+                            <div class="key key-oval key-dark"><span>&rarr;</span></div>
+                        </div>
+                    </div>
+                    <div class="key-row">
+                        <div class="key"><span>math</span></div>
+                        <div class="key"><span>apps</span></div>
+                        <div class="key"><span>prgm</span></div>
+                        <div class="key"><span>vars</span></div>
+                        <div class="key"><span>clear</span></div>
+                    </div>
+                    <div class="key-row">
+                        <div class="key key-number"><span>7</span></div>
+                        <div class="key key-number"><span>8</span></div>
+                        <div class="key key-number"><span>9</span></div>
+                        <div class="key key-op"><span>&times;</span></div>
+                    </div>
+                    <div class="key-row">
+                        <div class="key key-number"><span>4</span></div>
+                        <div class="key key-number"><span>5</span></div>
+                        <div class="key key-number"><span>6</span></div>
+                        <div class="key key-op"><span>&minus;</span></div>
+                    </div>
+                    <div class="key-row">
+                        <div class="key key-number"><span>1</span></div>
+                        <div class="key key-number"><span>2</span></div>
+                        <div class="key key-number"><span>3</span></div>
+                        <div class="key key-op"><span>+</span></div>
+                    </div>
+                    <div class="key-row">
+                        <div class="key key-number"><span>0</span></div>
+                        <div class="key key-number"><span>.</span></div>
+                        <div class="key key-number"><span>(-)</span></div>
+                        <div class="key key-enter"><span>enter</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- USB Connection Card -->
+            <div class="info-card usb-card" id="usbCard">
+                <div class="info-header">
+                    <span class="info-icon">🔌</span>
+                    <h3>Direct Calculator Transfer (USB)</h3>
+                </div>
+                <div class="usb-status-container">
+                    <div class="usb-status-indicator">
+                        <span class="status-dot"></span>
+                        <span class="status-text" id="usbStatusText">Not connected</span>
+                    </div>
+                    <button type="button" id="connectUsbBtn" class="btn btn-secondary btn-sm">Connect Calculator</button>
+                </div>
+                <div class="toggle-group auto-sync-group" style="display: none; margin-top: 0.5rem; padding: 0.5rem; background: none; border: none; align-items: center;">
+                    <label class="switch-container">
+                        <input type="checkbox" id="autoSyncToggle" checked>
+                        <span class="switch-slider"></span>
+                    </label>
+                    <div class="toggle-label" style="margin-left: 0.5rem;">
+                        <span class="toggle-title" style="font-size: 0.85rem; font-weight: 500;">Auto-Sync to Calculator</span>
+                        <span class="toggle-desc" style="font-size: 0.75rem;">Send directly to calculator upon generation</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sanitization log / Info box -->
+            <div class="info-card" id="infoCard">
+                <div class="info-header">
+                    <span class="info-icon">💡</span>
+                    <h3>Transfer Instructions</h3>
+                </div>
+                <p>1. Open <strong>TI Connect CE</strong> software on your computer.</p>
+                <p>2. Connect your calculator via USB.</p>
+                <p>3. Drag the downloaded <strong>.8xp</strong> file into the <em>Calculator Explorer</em> panel.</p>
+                <p>4. On your calculator, press <code>[PRGM]</code>, select your program, and press <code>[ENTER]</code> to view/edit!</p>
+            </div>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <p>Built for TI-83 Plus, TI-84 Plus, TI-84 Plus C Silver Edition, and TI-84 Plus CE.</p>
+    </footer>
+
+    <script type="module" src="script.js"></script>
+</body>
+</html>
