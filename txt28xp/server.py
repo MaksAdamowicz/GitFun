@@ -107,7 +107,7 @@ class ConverterRequestHandler(http.server.SimpleHTTPRequestHandler):
                 program.name = prog_name
                 program.load_string(processed_text)
                 
-                file_bytes = program.bytes()
+                file_bytes = program.export().bytes()
                 b64_data = base64.b64encode(file_bytes).decode('utf-8')
                 
                 response = {
