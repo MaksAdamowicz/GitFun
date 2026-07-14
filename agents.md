@@ -1,3 +1,19 @@
+## Agent skills
+
+### Issue tracker
+
+GitHub issues via `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default triage labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout. See `docs/agents/domain.md`.
+
+---
+
 # AI Agent Activity Log
 
 This log tracks all modifications made by the AI agent in this repository. Every change is documented here and pushed to GitHub.
